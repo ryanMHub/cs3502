@@ -1,3 +1,7 @@
+//Ryan Moskovciak
+//CS3502 W03 
+//Assignment01 Part 4
+
 //Header files
 #include <stdlib.h>
 #include <stdio.h>

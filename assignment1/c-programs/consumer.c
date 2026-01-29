@@ -64,10 +64,14 @@ int main(int argc, char *argv[]) {
 			break; //EOF
 		}
 
-		//increment line count
-		lines++;
 		//count chars
-		for(int i = 0 ; buffer[i] != '\0' ; i++) chars++;
+		for(int i = 0 ; buffer[i] != '\0' ; i++) {
+			chars++;
+			//increment lines when new line character is reached
+			if(buffer[i] == '\n') {
+				lines++;
+			}
+		}
 
 		//display if verbose selected
 		if(verbose) {

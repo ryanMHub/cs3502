@@ -1,3 +1,5 @@
+//Ryan Moskvociak
+//CS3502 W03
 // ============================================
 // buffer.h - Shared definitions (INCOMPLETE - You must complete this!)
 // ============================================

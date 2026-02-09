@@ -1,3 +1,5 @@
+//Ryan Moskovciak
+//CS3502 W03
 // ============================================
 // producer.c - Producer process starter
 // ============================================
@@ -43,18 +45,30 @@ int main(int argc, char* argv[]) {
     
     // Seed random number generator
     srand(time(NULL) + producer_id);
-    
+ 
     // TODO: Attach to shared memory
-	shm_id = shmget(SHM_KEY, sizeof(shared_buffer_t), IPC_CREAT | 0666);
+	int created = 0;
+	shm_id = shmget(SHM_KEY, sizeof(shared_buffer_t), IPC_CREAT | IPC_EXCL | 0666);
+	if(shm_id == -1) {
+		shm_id = shmget(SHM_KEY, sizeof(shared_buffer_t), 0666);
+		if(shm_id == -1) {
+			perror("Producer Error: shmget failed");
+			exit(1);
+		}
+	} else {
+		created = 1;
+	}
+
 	buffer = (shared_buffer_t*) shmat(shm_id, NULL, 0);
 	if(buffer == (void*) -1) {
 		perror("Producer Error: shmat failed");
 		exit(EXIT_FAILURE);
 	}
 
-	buffer->head = 0;
-	buffer->tail = 0;
-	buffer->count = 0;
+	if(created) {
+		buffer->head = 0;
+		buffer->tail = 0;
+	}	buffer->count = 0;
 
     // TODO: Open semaphores after open of each semaphore, check for error. If so display error, cleanup, and exit
 	mutex = sem_open(SEM_MUTEX, O_CREAT, 0644, 1);
@@ -65,14 +79,14 @@ int main(int argc, char* argv[]) {
 	}
 
 	empty = sem_open(SEM_EMPTY, O_CREAT, 0644, BUFFER_SIZE);
-	if(mutex == SEM_FAILED) {
+	if(empty == SEM_FAILED) {
 		perror("Producer Error: sem_open empty failed");
 		cleanup();
 		exit(1);
 	}
 
 	full = sem_open(SEM_FULL, O_CREAT, 0644, 0);
-	if(mutex == SEM_FAILED) {
+	if(full == SEM_FAILED) {
 		perror("Producer Error: sem_open full failed");
 		cleanup();
 		exit(1);

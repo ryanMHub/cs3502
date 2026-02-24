@@ -26,7 +26,7 @@ void deposit_unsafe(int account_id, double amount) {
 	double current_balance = accounts[account_id].balance;
 
 	// MODIFY (simulate processing time)
-	usleep(1); // This increases likelihood of race condition!
+	//usleep(1); // This increases likelihood of race condition!
 	double new_balance = current_balance + amount;
 
 	// WRITE (another thread might have changed balance between READ and WRITE!)
@@ -43,13 +43,22 @@ void withdrawal_unsafe(int account_id, double amount) {
         double current_balance = accounts[account_id].balance;
 
         // MODIFY (simulate processing time)
-        usleep(1); // This increases likelihood of race condition!
+        //usleep(1); // This increases likelihood of race condition!
         double new_balance = current_balance - amount;
 
         // WRITE (another thread might have changed balance between READ and WRITE!)
         accounts[account_id].balance = new_balance;
         accounts[account_id].transaction_count++;
 
+}
+
+//TODO This was added since original code didn't actually keep the total dollar amount in the system constant
+void transfer_funds(int acc_in, int acc_out, double amount, int teller_id) {
+	withdrawal_unsafe(acc_out, amount);
+	printf("Teller %d: Withdrew $%.2f from Account %d\n", teller_id, amount, acc_out);
+
+	deposit_unsafe(acc_in, amount);
+	printf("Teller %d: Deposited $%.2f to Account %d\n", teller_id, amount, acc_in);
 }
 
 // TODO 2: Implement the thread function
@@ -64,24 +73,14 @@ void* teller_thread(void* arg) {
 	for (int i = 0; i < TRANSACTIONS_PER_THREAD; i++) {
 		// TODO 2b: Randomly select an account (0 to NUM_ACCOUNTS-1)
 		//rand_r is used to prevent another race association when threads are competeing for rand() - shared global state
-		int account_idx = rand_r(&seed) % NUM_ACCOUNTS;
+		int acc_in = rand_r(&seed) % NUM_ACCOUNTS;
+		int acc_out = rand_r(&seed) % NUM_ACCOUNTS;
 
 		// TODO 2c: Generate random amount (1-100)
 		double amount = (double)((rand_r(&seed) % 100) + 1);
 
-		// TODO 2d: Randomly choose deposit (1) or withdrawal (0)
-		int operation = rand_r(&seed) % 2;
-
-		// TODO 2e: Call appropriate function
-		if (operation == 1) {
-			deposit_unsafe(account_idx, amount);
-			printf("Teller %d: Deposited $%.2f to Account %d\n",
-				teller_id, amount, account_idx);
-		} else {
-			withdrawal_unsafe(account_idx, amount);
-			printf("Teller %d: Withdrew $%.2f from Account %d\n",
-				teller_id, amount, account_idx);
-		}
+		//TODO swap money between accounts
+		transfer_funds(acc_in, acc_out, amount, teller_id);
 	}
 	return NULL;
 }
@@ -89,6 +88,8 @@ void* teller_thread(void* arg) {
 // TODO 3: Implement main function
 // Reference: See pthread_create and pthread_join man pages
 int main() {
+	struct timespec start, end;
+
 	printf("=== Phase 1: Race Conditions Demo ===\n\n");
 
 	// TODO 3a: Initialize all accounts
@@ -122,6 +123,7 @@ int main() {
 	// TODO 3d: Create all threads
 	// Reference: man pthread_create
 	// Caution: See Appendix A.2 warning about passing &i in loop!
+	clock_gettime(CLOCK_MONOTONIC, &start);
 	for (int i = 0; i < NUM_THREADS; i++) {
 		thread_ids[i] = i; // GIVEN: Store ID persistently
 
@@ -136,8 +138,12 @@ int main() {
 	// Reference: man pthread_join
 	// Question: What happens if you skip this step?
 	for (int i = 0; i < NUM_THREADS; i++) {
-	//	pthread_join(threads[i], NULL);
+		pthread_join(threads[i], NULL);
 	}
+
+	clock_gettime(CLOCK_MONOTONIC, &end);
+	double elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0;
+	printf("\n=== Elapsed Time: %.6f seconds\n", elapsed_time);
 
 	// TODO 3f: Calculate and display results
 	printf("\n=== Final Results ===\n");

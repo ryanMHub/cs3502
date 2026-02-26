@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
-#include <time.h>
 
 // Configuration - experiment with different values!
 #define NUM_ACCOUNTS 2

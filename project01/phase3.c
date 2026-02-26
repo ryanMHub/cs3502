@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
-#include <time.h>
 
 // Configuration - experiment with different values!
 #define NUM_ACCOUNTS 2
@@ -109,8 +108,6 @@ double getRandomAmount() {
 
 //Primary application driver
 int main() {
-       	struct timespec start, end;
-
        	printf("=== Phase 3: DeadLock Demo ===\n\n");
 
        	initialize_accounts();
@@ -126,7 +123,6 @@ int main() {
        	printf("\nExpected total: $%.2f\n\n", expected_total);
 
        	pthread_t threads[NUM_THREADS];
-       	int thread_ids[NUM_THREADS]; // GIVEN: Separate array fIDs
 
 	//build flip flopper of accounts
 	TransferArgs a = {.from = 0, .to = 1, .amount = getRandomAmount() };

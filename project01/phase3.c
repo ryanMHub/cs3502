@@ -11,9 +11,6 @@
 #define TRANSACTIONS_PER_THREAD 10
 #define INITIAL_BALANCE 1000.0
 
-
-void cleanup_mutexes(void);
-
 // Updated Account structure with mutex (GIVEN)
 typedef struct {
          int account_id;
@@ -31,6 +28,8 @@ typedef struct {
 
 // Global shared array - THIS CAUSES RACE CONDITIONS!
 Account accounts[NUM_ACCOUNTS];
+//counter to monitor deadlock
+volatile int progress_counter = 0;
 
 //Initialize each accounts values and mutex
 void initialize_accounts() {
@@ -87,6 +86,10 @@ void* deadlock_thread(void* arg) {
 	TransferArgs* t = (TransferArgs*)arg;
 	int rc = transfer_deadlock(t->from, t->to, t->amount);
 
+	//update progress counter
+	progress_counter++;
+
+	//display results
 	if(rc == 1) {
 		printf("Thread %ld: Transfer SUCCESS: $%.2f from %d to %d\n", (long)pthread_self(), t->amount, t->from, t->to);
 	} else if(rc == 0) {
@@ -133,52 +136,25 @@ int main() {
 	pthread_create(&threads[0], NULL, deadlock_thread, &a);
 	pthread_create(&threads[1], NULL, deadlock_thread, &b);
 
+	//Stores the starting time of progression observer
+	time_t last_time_change = time(NULL);
+	//initialize previous state of counter
+	int previous_counter = progress_counter;
 
-       	// TODO Add clock_gettime(CLOCK_MONOTONIC, &start)
-       	clock_gettime(CLOCK_MONOTONIC, &start);
+	//loop until deadlock is reached
+	while(1) {
+		sleep(1); //pause for one second
 
+		if(progress_counter != previous_counter) {
+			previous_counter = progress_counter;
+			last_time_change = time(NULL);
+		}
 
-        for (int i = 0; i < NUM_THREADS; i++) {
-                pthread_join(threads[i], NULL);
-        }
-
-	//TODO Add clock_gettime(CLOCK_MONOTONIC, &end) to end the timer
-        clock_gettime(CLOCK_MONOTONIC, &end);
-        cleanup_mutexes();
-
-        //TODO Calculate time spent using the locking overhead
-        double elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0;
-        printf("\n=== Elapsed Time: %.6f seconds\n", elapsed_time);
-
-        printf("\n=== Final Results ===\n");
-	double actual_total = 0.0;
-
-	for (int i = 0; i < NUM_ACCOUNTS; i++) {
-                printf("Account %d: $%.2f (%d transactions)\n",
-                        i, accounts[i].balance, accounts[i].transaction_count);
-                actual_total += accounts[i].balance;
-        }
-
-        printf("\nExpected total: $%.2f\n", expected_total);
-        printf("Actual total: $%.2f\n", actual_total);
-        printf("Difference: $%.2f\n", actual_total - expected_total);
-
-        // TODO 3g: Add race condition detection message
-        if(expected_total != actual_total) {
-               printf("\nRace Condition Detected\n");
-                printf("Run this multiple times - the difference may change each run.\n");
-        } else {
-                printf("\nNo race detected this run (Run again).\n");
-        }
-
-        return 0;
-}
-
-// TODO 4: Add mutex cleanup in main()
-// Reference: man pthread_mutex_destroy
-// Important: Destroy mutexes AFTER all threads complete!
-void cleanup_mutexes() {
-        for (int i = 0; i < NUM_ACCOUNTS; i++) {
-                pthread_mutex_destroy(&accounts[i].lock);
-        }
+		if(time(NULL) -	last_time_change >= 5) {
+			printf("\n**** Suspected Deadlock - Progress halted for 5 seconds ****\n");
+			printf("progress_counter=%d\n", progress_counter);
+			break;
+		}
+	}
+	return 0;
 }

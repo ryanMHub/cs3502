@@ -7,7 +7,7 @@
 
 // Configuration - experiment with different values!
 #define NUM_ACCOUNTS 2
-#define NUM_THREADS 4
+#define NUM_THREADS 2
 #define TRANSACTIONS_PER_THREAD 10
 #define INITIAL_BALANCE 1000.0
 
@@ -22,10 +22,17 @@ typedef struct {
          pthread_mutex_t lock; // NEW: Mutex for this account
 } Account;
 
+//Struct to handle thread flip to test deadlock
+typedef struct {
+	int from;
+	int to;
+	double amount;
+} TransferArgs;
+
 // Global shared array - THIS CAUSES RACE CONDITIONS!
 Account accounts[NUM_ACCOUNTS];
 
-// GIVEN: Example of mutex initialization
+//Initialize each accounts values and mutex
 void initialize_accounts() {
         for (int i = 0; i < NUM_ACCOUNTS; i++) {
                 accounts[i].account_id = i;
@@ -73,110 +80,78 @@ int transfer_deadlock(int from_id, int to_id, double amount) {
 	return  result;
 }
 
+//Builds struct to flip flop the accounts to be called by two different threads
+//Additionally handles errors and results. Although for this phase you won't see the
+//results. Other than proof of deadlock.
+void* deadlock_thread(void* arg) {
+	TransferArgs* t = (TransferArgs*)arg;
+	int rc = transfer_deadlock(t->from, t->to, t->amount);
 
-// GIVEN: Example deposit function WITH proper protection
-void deposit_safe(int account_id, double amount) {
-        // Acquire lock BEFORE accessing shared data
-        pthread_mutex_lock(&accounts[account_id].lock);
+	if(rc == 1) {
+		printf("Thread %ld: Transfer SUCCESS: $%.2f from %d to %d\n", (long)pthread_self(), t->amount, t->from, t->to);
+	} else if(rc == 0) {
+		printf("Thread %ld: Transfer FAILED (insufficient funds): $%.2f from %d to %d\n", (long)pthread_self(), t->amount, t->from, t->to);
+	} else {
+		printf("Thread %ld: Transfer ERROR (invalid args): $%.2f from %d to %d\n", (long)pthread_self(), t->amount, t->from, t->to);
+	}
 
-        // ===== CRITICAL SECTION =====
-        // Only ONE thread can execute this at a time for this account
-        accounts[account_id].balance += amount;
-        accounts[account_id].transaction_count++;
-        // ============================
-
-	// Release lock AFTER modifying shared data
-        pthread_mutex_unlock(&accounts[account_id].lock);
+	return NULL;
 }
 
-// TODO 1: Implement withdrawal_safe() with mutex protection
-// Reference: Follow the pattern of deposit_safe() above
-// Remember: lock BEFORE accessing data, unlock AFTER
-void withdrawal_safe(int account_id, double amount) {
-        //Acquire lock BEFORE accessing shared data
-        pthread_mutex_lock(&accounts[account_id].lock);
-
-        accounts[account_id].balance -= amount;
-        accounts[account_id].transaction_count++;
-
-        //Release lock AFTER modifying shared data
-        pthread_mutex_unlock(&accounts[account_id].lock);
+//Get a random amount
+double getRandomAmount() {
+	unsigned int seed = (unsigned int)time(NULL);
+	return (double)((rand_r(&seed) % 100) + 1);
 }
 
-//TODO This was added since original code didn't actually keep the total dollar amount in the system constant
-void transfer_funds(int acc_in, int acc_out, double amount, int teller_id) {
-          withdrawal_safe(acc_out, amount);
-          printf("Teller %d: Withdrew $%.2f from Account %d\n", teller_id, amount, acc_out);
-
-          deposit_safe(acc_in, amount);
-          printf("Teller %d: Deposited $%.2f to Account %d\n", teller_id, amount, acc_in);
-}
-
-
-// TODO 2: Update teller_thread to use safe functions
-// Change: deposit_unsafe -> deposit_safe
-// Change: withdrawal_unsafe -> withdrawal_safe
-void* teller_thread(void* arg) {
-         int teller_id = *(int*)arg; // GIVEN: Extract thread ID
-
-         unsigned int seed = (unsigned int)(time(NULL)^(unsigned long)pthread_self());
-         for (int i = 0; i < TRANSACTIONS_PER_THREAD; i++) {
-
-                 int acc_in = rand_r(&seed) % NUM_ACCOUNTS;
-                 int acc_out = rand_r(&seed) % NUM_ACCOUNTS;
-
-                 double amount = (double)((rand_r(&seed) % 100) + 1);
-
-                 transfer_funds(acc_in, acc_out, amount, teller_id);
-        }
-         return NULL;
-}
-
+//Primary application driver
 int main() {
-       struct timespec start, end;
+       	struct timespec start, end;
 
-       printf("=== Phase 3: DeadLock Demo ===\n\n");
+       	printf("=== Phase 3: DeadLock Demo ===\n\n");
 
-       initialize_accounts();
+       	initialize_accounts();
 
-       // Display initial state (GIVEN)
-       printf("Initial State:\n");
-       for (int i = 0; i < NUM_ACCOUNTS; i++) {
+       	// Display initial state (GIVEN)
+       	printf("Initial State:\n");
+       	for (int i = 0; i < NUM_ACCOUNTS; i++) {
               printf(" Account %d: $%.2f\n", i, accounts[i].balance);
-       }
+       	}
 
-       double expected_total = NUM_ACCOUNTS * INITIAL_BALANCE;
+       	double expected_total = NUM_ACCOUNTS * INITIAL_BALANCE;
 
-       printf("\nExpected total: $%.2f\n\n", expected_total);
+       	printf("\nExpected total: $%.2f\n\n", expected_total);
 
-       pthread_t threads[NUM_THREADS];
-       int thread_ids[NUM_THREADS]; // GIVEN: Separate array fIDs
+       	pthread_t threads[NUM_THREADS];
+       	int thread_ids[NUM_THREADS]; // GIVEN: Separate array fIDs
 
-       // TODO Add clock_gettime(CLOCK_MONOTONIC, &start)
-       clock_gettime(CLOCK_MONOTONIC, &start); 
-       for (int i = 0; i < NUM_THREADS; i++) {
-                thread_ids[i] = i; // GIVEN: Store ID persistently
+	//build flip flopper of accounts
+	TransferArgs a = {.from = 0, .to = 1, .amount = getRandomAmount() };
+	TransferArgs b = {.from = 1, .to = 0, .amount = getRandomAmount() };
 
-                int rc = pthread_create(&threads[i], NULL, teller_thread, &thread_ids[i]);
-                if(rc != 0) {
-                       fprintf(stderr, "Error: pthread_create failed (%d)\n", rc);
-                       exit(1);
-                }
-        }
+	//create threads 1 and 2 with reversed account calls
+	pthread_create(&threads[0], NULL, deadlock_thread, &a);
+	pthread_create(&threads[1], NULL, deadlock_thread, &b);
+
+
+       	// TODO Add clock_gettime(CLOCK_MONOTONIC, &start)
+       	clock_gettime(CLOCK_MONOTONIC, &start);
+
 
         for (int i = 0; i < NUM_THREADS; i++) {
                 pthread_join(threads[i], NULL);
         }
-         //TODO Add clock_gettime(CLOCK_MONOTONIC, &end) to end the timer
-         clock_gettime(CLOCK_MONOTONIC, &end);
-         cleanup_mutexes();
 
-         //TODO Calculate time spent using the locking overhead
-         double elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0;
-         printf("\n=== Elapsed Time: %.6f seconds\n", elapsed_time);
+	//TODO Add clock_gettime(CLOCK_MONOTONIC, &end) to end the timer
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        cleanup_mutexes();
 
-         printf("\n=== Final Results ===\n");
-         double actual_total = 0.0;
+        //TODO Calculate time spent using the locking overhead
+        double elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0;
+        printf("\n=== Elapsed Time: %.6f seconds\n", elapsed_time);
+
+        printf("\n=== Final Results ===\n");
+	double actual_total = 0.0;
 
 	for (int i = 0; i < NUM_ACCOUNTS; i++) {
                 printf("Account %d: $%.2f (%d transactions)\n",

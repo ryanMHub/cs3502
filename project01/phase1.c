@@ -43,7 +43,7 @@ void withdrawal_unsafe(int account_id, double amount) {
         double current_balance = accounts[account_id].balance;
 
         // MODIFY (simulate processing time)
-        //usleep(1); // This increases likelihood of race condition!
+        usleep(1); // This increases likelihood of race condition!
         double new_balance = current_balance - amount;
 
         // WRITE (another thread might have changed balance between READ and WRITE!)

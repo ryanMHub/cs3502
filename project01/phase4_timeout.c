@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+#include <errno.h>
 
 // Configuration - experiment with different values!
 #define NUM_ACCOUNTS 2
@@ -31,6 +32,14 @@ volatile int progress_counter = 0;
 //count completed threads
 volatile int done_count = 0;
 
+//this helper function creates an absolute timeout for pthread_cond_timeout
+static void make_abs_timeout(struct timespec* ts, long ms) {
+	clock_gettime(CLOCK_REALTIME, ts);
+	ts->tv_nsec += ms * 1000000L;
+	ts->tv_sec += ts->tv_nsec / 1000000000L;
+	ts->tv_nsec %= 1000000000L;
+}
+
 //Initialize each accounts values and mutex
 void initialize_accounts() {
         for (int i = 0; i < NUM_ACCOUNTS; i++) {
@@ -42,46 +51,47 @@ void initialize_accounts() {
         }
 }
 
-//Important return values 1 = Transfer successful, 0 = Transfer failure, -1 = error handling
-//Safe_transfer_ordered prevents deadlock by locking lowest order account first
-int safe_transfer_ordered(int from_id, int to_id, double amount) {
-	//Check if amount and balances are valid
-	if(from_id == to_id) return -1;
+int safe_transfer_timeout(int from, int to, double amount) {
+	if(from == to) return -1;
 	if(amount <= 0) return -1;
 
-	//Determine which account is less than
-	int first = (from_id < to_id) ? from_id : to_id;
-	int second = (from_id < to_id) ? to_id : from_id;
+	struct timespec ts;
+	int rc;
 
-	//Lock the first account
-	pthread_mutex_lock(&accounts[first].lock);
-	printf("Thread %ld: Locked account %d\n", (long)pthread_self(), first);
+	make_abs_timeout(&ts, 10);
+	rc = pthread_mutex_timedlock(&accounts[from].lock, &ts);
+	if(rc == ETIMEDOUT) return -2;
+	if(rc != 0) return -1;
 
-	//Simulate processing delay
 	usleep(100);
 
-	//Lock the second account
-	printf("Thread %ld: Waiting for account %d\n", (long)pthread_self(), second);
-	pthread_mutex_lock(&accounts[second].lock);
-
-	int result;
-
-	//Check if there is enough money in the from account before conducting transfer
-	if(accounts[from_id].balance < amount) {
-		result = 0;
-	} else {
-		//Transfer (never reached if deadlocked)
-		accounts[from_id].balance -= amount;
-		accounts[to_id].balance += amount;
-		accounts[from_id].transaction_count++;
-		accounts[to_id].transaction_count++;
-		result = 1;
+	make_abs_timeout(&ts, 2);
+	rc = pthread_mutex_timedlock(&accounts[to].lock, &ts);
+	if(rc == ETIMEDOUT) {
+		pthread_mutex_unlock(&accounts[from].lock);
+		return -2;
+	}
+	if(rc != 0) {
+		pthread_mutex_unlock(&accounts[from].lock);
+		return -1;
 	}
 
-	//Unlock the locked accounts
-	pthread_mutex_unlock(&accounts[second].lock);
-	pthread_mutex_unlock(&accounts[first].lock);
-	return  result;
+	//Crictical Section
+	int result;
+	if(accounts[from].balance < amount) {
+		result = 0;
+	} else {
+		accounts[from].balance -= amount;
+		accounts[to].balance += amount;
+		accounts[from].transaction_count++;
+		accounts[to].transaction_count++;
+		result = 1;
+	}
+	// end Critical
+
+	pthread_mutex_unlock(&accounts[to].lock);
+	pthread_mutex_unlock(&accounts[from].lock);
+	return result;
 }
 
 //Get a random amount
@@ -100,7 +110,15 @@ void* deadlock_thread(void* arg) {
 
 	for(int i = 0 ; i < TRANSACTIONS_PER_THREAD ; i++) {
 		double amount = getRandomAmount(&seed);
-		int rc = safe_transfer_ordered(t->from, t->to, amount);
+
+		int rc;
+		do {
+			rc = safe_transfer_timeout(t->from, t->to, amount);
+			if(rc == -2) {
+				usleep((rand_r(&seed) % 200) + 50);
+			}
+		} while(rc == -2);
+
 		progress_counter++;
 
 		//display results
@@ -127,7 +145,7 @@ void cleanup_mutexes() {
 
 //Primary application driver
 int main() {
-       	printf("=== Phase 4: DeadLock Solution Demo ===\n\n");
+       	printf("=== Phase 4: DeadLock Solution Timedlock Demo ===\n\n");
 
        	initialize_accounts();
 

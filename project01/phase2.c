@@ -58,8 +58,10 @@ void withdrawal_safe(int account_id, double amount) {
 	//Acquire lock BEFORE accessing shared data
 	pthread_mutex_lock(&accounts[account_id].lock);
 
+	//+++++Critical Section______
 	accounts[account_id].balance -= amount;
 	accounts[account_id].transaction_count++;
+	//+++++++++++++_____________
 
 	//Release lock AFTER modifying shared data
 	pthread_mutex_unlock(&accounts[account_id].lock);
@@ -116,6 +118,8 @@ int main() {
 
         // TODO Add clock_gettime(CLOCK_MONOTONIC, &start)
 	clock_gettime(CLOCK_MONOTONIC, &start); 
+
+	//loop creating all threads and running through the teller_thread function for transactionss
         for (int i = 0; i < NUM_THREADS; i++) {
                 thread_ids[i] = i; // GIVEN: Store ID persistently
 
@@ -126,12 +130,14 @@ int main() {
                 }
         }
 
+	//Join all threads once they complete operation
 	for (int i = 0; i < NUM_THREADS; i++) {
         	pthread_join(threads[i], NULL);
         }
 
 	//TODO Add clock_gettime(CLOCK_MONOTONIC, &end) to end the timer
 	clock_gettime(CLOCK_MONOTONIC, &end);
+	//cleanup mutex locks
 	cleanup_mutexes();
 
 	//TODO Calculate time spent using the locking overhead

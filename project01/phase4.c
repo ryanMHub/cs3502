@@ -83,9 +83,7 @@ double getRandomAmount(unsigned int* seed) {
 	return (double)((rand_r(seed) % 100) + 1);
 }
 
-//Builds struct to flip flop the accounts to be called by two different threads
-//Additionally handles errors and results. Although for this phase you won't see the
-//results. Other than proof of deadlock.
+//Generates a random amount, to id, and from id for each transaction and then calls the safe_transfer_ordered function
 void* direct_thread(void* arg) {
 	int id = *(int*)arg;
 
@@ -142,7 +140,7 @@ int main() {
 
        	printf("\nExpected total: $%.2f\n\n", expected_total);
 
-	//Declare threads and TransferArgs
+	//Declare threads and ids
        	pthread_t threads[NUM_THREADS];
 	int threadID[NUM_THREADS];
 

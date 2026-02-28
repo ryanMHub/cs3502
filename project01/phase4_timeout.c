@@ -45,20 +45,23 @@ void initialize_accounts() {
         }
 }
 
+//Controls the lock process and timeouts for each transaction
 int safe_transfer_timeout(int from, int to, double amount) {
 	if(from == to) return -1;
 	if(amount <= 0) return -1;
 
 	struct timespec ts;
 	int rc;
-
+	//attempt the to lock resource with timeout check if timeout return to the
+	//direct_thread function or if failed do same
 	make_abs_timeout(&ts, 10);
 	rc = pthread_mutex_timedlock(&accounts[from].lock, &ts);
 	if(rc == ETIMEDOUT) return -2;
 	if(rc != 0) return -1;
 
 	usleep(100);
-
+	//attempt to lock resource with timeout check if timeout return unlock previous resource 
+	//and return to direct_thread function or if failed do same
 	make_abs_timeout(&ts, 2);
 	rc = pthread_mutex_timedlock(&accounts[to].lock, &ts);
 	if(rc == ETIMEDOUT) {
@@ -93,9 +96,9 @@ double getRandomAmount(unsigned int* seed) {
 	return (double)((rand_r(seed) % 100) + 1);
 }
 
-//Builds struct to flip flop the accounts to be called by two different threads
-//Additionally handles errors and results. Although for this phase you won't see the
-//results. Other than proof of deadlock.
+//Randomly generates an amount, a to acccount Id, and a from account Id for each transaction 
+//for each thread. When calling safe_transfer_timeout. If the locking process times out it is 
+//backed out to this point and then pauses until it tries again.
 void* direct_thread(void* arg) {
 	int id = *(int*)arg;
 
@@ -111,6 +114,7 @@ void* direct_thread(void* arg) {
 			to = rand_r(&seed) % NUM_ACCOUNTS;
 		} while (to == from);
 
+		//pause and backout point if not successful
 		int rc;
 		do {
 			rc = safe_transfer_timeout(from, to, amount);
@@ -159,11 +163,11 @@ int main() {
 
        	printf("\nExpected total: $%.2f\n\n", expected_total);
 
-	//Declare threads and TransferArgs
+	//Declare threads and ids
        	pthread_t threads[NUM_THREADS];
 	int threadID[NUM_THREADS];
 
-	//create threads with a flip flop pattern between accounts
+	//create threads
 	for(int i = 0 ; i < NUM_THREADS ; i++) {
 		threadID[i] = i;
 		pthread_create(&threads[i], NULL, direct_thread, &threadID[i]);
@@ -174,7 +178,7 @@ int main() {
 	//initialize previous state of counter
 	int previous_counter = progress_counter;
 
-	//loop until deadlock is reached
+	//loop until all threads are completed or deadlock is reached
 	while(done_count < NUM_THREADS) {
 		sleep(1); //pause for one second
 

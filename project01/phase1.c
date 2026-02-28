@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+
 // Configuration - experiment with different values!
 #define NUM_ACCOUNTS 2
 #define NUM_THREADS 4
@@ -26,7 +27,7 @@ void deposit_unsafe(int account_id, double amount) {
 	double current_balance = accounts[account_id].balance;
 
 	// MODIFY (simulate processing time)
-	//usleep(1); // This increases likelihood of race condition!
+	usleep(1); // This increases likelihood of race condition!
 	double new_balance = current_balance + amount;
 
 	// WRITE (another thread might have changed balance between READ and WRITE!)
@@ -141,6 +142,7 @@ int main() {
 		pthread_join(threads[i], NULL);
 	}
 
+	//caluculate time it took to run and display
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	double elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1000000000.0;
 	printf("\n=== Elapsed Time: %.6f seconds\n", elapsed_time);

@@ -6,8 +6,9 @@
 
 // Configuration - experiment with different values!
 #define NUM_ACCOUNTS 2
-#define NUM_THREADS 2
-#define INITIAL_BALANCE 1000.0
+#define NUM_THREADS 8
+#define TRANSACTIONS_PER_THREAD 500
+#define INITIAL_BALANCE 80000.0
 
 // Updated Account structure with mutex (GIVEN)
 typedef struct {
@@ -21,7 +22,6 @@ typedef struct {
 typedef struct {
 	int from;
 	int to;
-	double amount;
 } TransferArgs;
 
 // Global shared array - THIS CAUSES RACE CONDITIONS!
@@ -84,26 +84,37 @@ int safe_transfer_ordered(int from_id, int to_id, double amount) {
 	return  result;
 }
 
+//Get a random amount
+double getRandomAmount(unsigned int* seed) {
+	return (double)((rand_r(seed) % 100) + 1);
+}
+
 //Builds struct to flip flop the accounts to be called by two different threads
 //Additionally handles errors and results. Although for this phase you won't see the
 //results. Other than proof of deadlock.
 void* deadlock_thread(void* arg) {
 	TransferArgs* t = (TransferArgs*)arg;
-	int rc = safe_transfer_ordered(t->from, t->to, t->amount);
 
-	//update progress counter and Thread completed counter
-	progress_counter++;
-	done_count++;
+	//generate a seed for the random number generator
+	unsigned int seed = time(NULL) ^ (unsigned long)pthread_self();
 
-	//display results
-	if(rc == 1) {
-		printf("Thread %ld: Transfer SUCCESS: $%.2f from %d to %d\n", (long)pthread_self(), t->amount, t->from, t->to);
-	} else if(rc == 0) {
-		printf("Thread %ld: Transfer FAILED (insufficient funds): $%.2f from %d to %d\n", (long)pthread_self(), t->amount, t->from, t->to);
-	} else {
-		printf("Thread %ld: Transfer ERROR (invalid args): $%.2f from %d to %d\n", (long)pthread_self(), t->amount, t->from, t->to);
+	for(int i = 0 ; i < TRANSACTIONS_PER_THREAD ; i++) {
+		double amount = getRandomAmount(&seed);
+		int rc = safe_transfer_ordered(t->from, t->to, amount);
+		progress_counter++;
+
+		//display results
+		if(rc == 1) {
+			printf("Thread %ld: Transfer SUCCESS: $%.2f from %d to %d\n", (long)pthread_self(), amount, t->from, t->to);
+		} else if(rc == 0) {
+			printf("Thread %ld: Transfer FAILED (insufficient funds): $%.2f from %d to %d\n", (long)pthread_self(), amount, t->from, t->to);
+		} else {
+			printf("Thread %ld: Transfer ERROR (invalid args): $%.2f from %d to %d\n", (long)pthread_self(), amount, t->from, t->to);
+		}
 	}
 
+	//update when thread is completed
+	done_count++;
 	return NULL;
 }
 
@@ -112,12 +123,6 @@ void cleanup_mutexes() {
 	for(int i = 0 ; i < NUM_ACCOUNTS; i++) {
 		pthread_mutex_destroy(&accounts[i].lock);
 	}
-}
-
-//Get a random amount
-double getRandomAmount() {
-	unsigned int seed = (unsigned int)time(NULL);
-	return (double)((rand_r(&seed) % 100) + 1);
 }
 
 //Primary application driver
@@ -136,15 +141,16 @@ int main() {
 
        	printf("\nExpected total: $%.2f\n\n", expected_total);
 
+	//Declare threads and TransferArgs
        	pthread_t threads[NUM_THREADS];
+	TransferArgs args[NUM_THREADS];
 
-	//build flip flopper of accounts
-	TransferArgs a = {.from = 0, .to = 1, .amount = getRandomAmount() };
-	TransferArgs b = {.from = 1, .to = 0, .amount = getRandomAmount() };
-
-	//create threads 1 and 2 with reversed account calls
-	pthread_create(&threads[0], NULL, deadlock_thread, &a);
-	pthread_create(&threads[1], NULL, deadlock_thread, &b);
+	//create threads with a flip flop pattern between accounts
+	for(int i = 0 ; i < NUM_THREADS ; i++) {
+		args[i].from = (i % 2 == 0) ? 0 : 1;
+		args[i].to = (i % 2 == 0) ? 1 : 0;
+		pthread_create(&threads[i], NULL, deadlock_thread, &args[i]);
+	}
 
 	//Stores the starting time of progression observer
 	time_t last_time_change = time(NULL);
@@ -176,6 +182,29 @@ int main() {
 		}
 		cleanup_mutexes();
 	}
+
+	// Calculate and display results
+        printf("\n=== Final Results ===\n");
+        double actual_total = 0.0;
+
+        for (int i = 0; i < NUM_ACCOUNTS; i++) {
+                printf("Account %d: $%.2f (%d transactions)\n",
+                        i, accounts[i].balance, accounts[i].transaction_count);
+                actual_total += accounts[i].balance;
+        }
+
+        printf("\nExpected total: $%.2f\n", expected_total);
+        printf("Actual total: $%.2f\n", actual_total);
+        printf("Difference: $%.2f\n", actual_total - expected_total);
+
+        //Check if an error occured in transaction balances
+        if(expected_total != actual_total) {
+                printf("\nBalances inaccurate\n");
+                printf("Run this multiple times - the difference may change each run.\n");
+        } else {
+                printf("\nBalances are accurate\n");
+        }
+
 
 	return 0;
 }

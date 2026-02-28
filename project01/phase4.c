@@ -5,7 +5,7 @@
 #include <unistd.h>
 
 // Configuration - experiment with different values!
-#define NUM_ACCOUNTS 2
+#define NUM_ACCOUNTS 8
 #define NUM_THREADS 8
 #define TRANSACTIONS_PER_THREAD 500
 #define INITIAL_BALANCE 80000.0
@@ -17,12 +17,6 @@ typedef struct {
          int transaction_count;
          pthread_mutex_t lock; // NEW: Mutex for this account
 } Account;
-
-//Struct to handle thread flip to test deadlock
-typedef struct {
-	int from;
-	int to;
-} TransferArgs;
 
 // Global shared array - THIS CAUSES RACE CONDITIONS!
 Account accounts[NUM_ACCOUNTS];
@@ -92,24 +86,31 @@ double getRandomAmount(unsigned int* seed) {
 //Builds struct to flip flop the accounts to be called by two different threads
 //Additionally handles errors and results. Although for this phase you won't see the
 //results. Other than proof of deadlock.
-void* deadlock_thread(void* arg) {
-	TransferArgs* t = (TransferArgs*)arg;
+void* direct_thread(void* arg) {
+	int id = *(int*)arg;
 
 	//generate a seed for the random number generator
 	unsigned int seed = time(NULL) ^ (unsigned long)pthread_self();
 
 	for(int i = 0 ; i < TRANSACTIONS_PER_THREAD ; i++) {
 		double amount = getRandomAmount(&seed);
-		int rc = safe_transfer_ordered(t->from, t->to, amount);
+		int from = rand_r(&seed) % NUM_ACCOUNTS;
+		int to;
+		//this is checked here because of the random selection process, but it is also double checked in the safe_transfer_ordered function
+		do {
+			to = rand_r(&seed) % NUM_ACCOUNTS;
+		} while (to == from);
+
+		int rc = safe_transfer_ordered(from, to, amount);
 		progress_counter++;
 
 		//display results
 		if(rc == 1) {
-			printf("Thread %ld: Transfer SUCCESS: $%.2f from %d to %d\n", (long)pthread_self(), amount, t->from, t->to);
+			printf("Thread %ld: Transfer SUCCESS: $%.2f from %d to %d\n", (long)id, amount, from, to);
 		} else if(rc == 0) {
-			printf("Thread %ld: Transfer FAILED (insufficient funds): $%.2f from %d to %d\n", (long)pthread_self(), amount, t->from, t->to);
+			printf("Thread %ld: Transfer FAILED (insufficient funds): $%.2f from %d to %d\n", (long)id, amount, from, to);
 		} else {
-			printf("Thread %ld: Transfer ERROR (invalid args): $%.2f from %d to %d\n", (long)pthread_self(), amount, t->from, t->to);
+			printf("Thread %ld: Transfer ERROR (invalid args): $%.2f from %d to %d\n", (long)id, amount, from, to);
 		}
 	}
 
@@ -143,13 +144,12 @@ int main() {
 
 	//Declare threads and TransferArgs
        	pthread_t threads[NUM_THREADS];
-	TransferArgs args[NUM_THREADS];
+	int threadID[NUM_THREADS];
 
-	//create threads with a flip flop pattern between accounts
+	//create threads and assign id num
 	for(int i = 0 ; i < NUM_THREADS ; i++) {
-		args[i].from = (i % 2 == 0) ? 0 : 1;
-		args[i].to = (i % 2 == 0) ? 1 : 0;
-		pthread_create(&threads[i], NULL, deadlock_thread, &args[i]);
+		threadID[i] = i;
+		pthread_create(&threads[i], NULL, direct_thread, &threadID[i]);
 	}
 
 	//Stores the starting time of progression observer

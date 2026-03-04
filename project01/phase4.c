@@ -6,7 +6,7 @@
 
 // Configuration - experiment with different values!
 #define NUM_ACCOUNTS 8
-#define NUM_THREADS 8
+#define NUM_THREADS 83
 #define TRANSACTIONS_PER_THREAD 500
 #define INITIAL_BALANCE 80000.0
 
@@ -38,7 +38,7 @@ void initialize_accounts() {
 
 //Important return values 1 = Transfer successful, 0 = Transfer failure, -1 = error handling
 //Safe_transfer_ordered prevents deadlock by locking lowest order account first
-int safe_transfer_ordered(int from_id, int to_id, double amount) {
+int safe_transfer_ordered(int t_id, int from_id, int to_id, double amount) {
 	//Check if amount and balances are valid
 	if(from_id == to_id) return -1;
 	if(amount <= 0) return -1;
@@ -49,13 +49,13 @@ int safe_transfer_ordered(int from_id, int to_id, double amount) {
 
 	//Lock the first account
 	pthread_mutex_lock(&accounts[first].lock);
-	printf("Thread %ld: Locked account %d\n", (long)pthread_self(), first);
+	printf("Thread %ld: Locked account %d\n", (long)t_id, first);
 
 	//Simulate processing delay
 	usleep(100);
 
 	//Lock the second account
-	printf("Thread %ld: Waiting for account %d\n", (long)pthread_self(), second);
+	printf("Thread %ld: Locked account %d\n", (long)t_id, second);
 	pthread_mutex_lock(&accounts[second].lock);
 
 	int result;
@@ -75,6 +75,7 @@ int safe_transfer_ordered(int from_id, int to_id, double amount) {
 	//Unlock the locked accounts
 	pthread_mutex_unlock(&accounts[second].lock);
 	pthread_mutex_unlock(&accounts[first].lock);
+	printf("Thread %ld: Unlocked Both Accounts\n", (long)t_id);
 	return  result;
 }
 
@@ -99,7 +100,7 @@ void* direct_thread(void* arg) {
 			to = rand_r(&seed) % NUM_ACCOUNTS;
 		} while (to == from);
 
-		int rc = safe_transfer_ordered(from, to, amount);
+		int rc = safe_transfer_ordered(id, from, to, amount);
 		progress_counter++;
 
 		//display results

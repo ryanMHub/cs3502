@@ -8,8 +8,8 @@
 // Configuration - experiment with different values!
 #define NUM_ACCOUNTS 8
 #define NUM_THREADS 8
-#define TRANSACTIONS_PER_THREAD 10
-#define INITIAL_BALANCE 80000.0
+#define TRANSACTIONS_PER_THREAD 12
+#define INITIAL_BALANCE 10000.0
 
 // Updated Account structure with mutex (GIVEN)
 typedef struct {
@@ -46,7 +46,7 @@ void initialize_accounts() {
 }
 
 //Controls the lock process and timeouts for each transaction
-int safe_transfer_timeout(int from, int to, double amount) {
+int safe_transfer_timeout(int t_id, int from, int to, double amount) {
 	if(from == to) return -1;
 	if(amount <= 0) return -1;
 
@@ -58,6 +58,7 @@ int safe_transfer_timeout(int from, int to, double amount) {
 	rc = pthread_mutex_timedlock(&accounts[from].lock, &ts);
 	if(rc == ETIMEDOUT) return -2;
 	if(rc != 0) return -1;
+	printf("Thread %ld: Locked account %d\n", (long)t_id, from);
 
 	usleep(100);
 	//attempt to lock resource with timeout check if timeout return unlock previous resource 
@@ -66,12 +67,15 @@ int safe_transfer_timeout(int from, int to, double amount) {
 	rc = pthread_mutex_timedlock(&accounts[to].lock, &ts);
 	if(rc == ETIMEDOUT) {
 		pthread_mutex_unlock(&accounts[from].lock);
+		printf("Thread %ld: Unlocked account %d\n", (long)t_id, from);
 		return -2;
 	}
 	if(rc != 0) {
 		pthread_mutex_unlock(&accounts[from].lock);
+		printf("Thread %ld: Unlocked account %d\n", (long)t_id, from);
 		return -1;
 	}
+	printf("Thread %ld: Locked account %d\n", (long)t_id, to);
 
 	//Crictical Section
 	int result;
@@ -88,6 +92,7 @@ int safe_transfer_timeout(int from, int to, double amount) {
 
 	pthread_mutex_unlock(&accounts[to].lock);
 	pthread_mutex_unlock(&accounts[from].lock);
+	printf("Thread %ld: Unlocked Both Accounts\n", (long)t_id);
 	return result;
 }
 
@@ -117,7 +122,7 @@ void* direct_thread(void* arg) {
 		//pause and backout point if not successful
 		int rc;
 		do {
-			rc = safe_transfer_timeout(from, to, amount);
+			rc = safe_transfer_timeout(id, from, to, amount);
 			if(rc == -2) {
 				usleep((rand_r(&seed) % 200) + 50);
 			}
